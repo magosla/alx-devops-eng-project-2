@@ -1,0 +1,215 @@
+Parameters:
+  EnvironmentName:
+    Description: High-Availability Web App (Project 2)
+    Type: String
+  S3BucketID:
+    Description: The ID of the S3 bucket
+    Type: String
+  AMItoUse:
+    Description: The EC2 Image
+    Type: String
+  InstanceStorageSize:
+    Description: The size of the instance storage space
+    Type: Number
+  InstanceType:
+    Description: The instance type
+    Type: String
+  MinAvailInstances:
+    Description: The minimum number of instances
+    Type: Number
+    Default: 1
+  MaxAvailInstances:
+    Description: The maximum number of instances
+    Type: Number
+    Default: 1
+  HealthCheckIntervalSeconds:
+    Description: The interval in seconds to wait before a health check
+    Type: Number
+  WebServerPath:
+    Description: The public web path
+    Type: String
+  WebServerPort:
+    Description: The webserver port
+    Type: Number
+  WebServerProtocol:
+    Description: The web protocol
+    Type: String
+  HTTPPort:
+    Description: The http port
+    Type: Number
+  HealthCheckTimeoutSeconds:
+    Description: The interval in seconds to wait for a health check to run
+    Type: Number
+  HealthyThresholdCount:
+    Description: The healthy threshold count
+    Type: Number
+  UnhealthyThresholdCount:
+    Description: The unhealthy threshold count
+    Type: Number
+Resources:
+  UdacityS3ReadOnlyEC2:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      RoleName: UdacityS3ReadOnlyEC2ReadRole
+  ProfileWithRolesForOurApp:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: "ProfileWithRolesForOurApp-InstanceProfile"
+      Path: !Ref "WebServerPath"
+      Roles:
+        - !Ref UdacityS3ReadOnlyEC2
+  LBSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to our load balancer
+      VpcId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-VPCID"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref HTTPPort
+          ToPort: !Ref HTTPPort
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: !Ref HTTPPort
+          ToPort: !Ref HTTPPort
+          CidrIp: 0.0.0.0/0
+  WebServerSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to our hosts and SSH from local only
+      VpcId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-VPCID"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref WebServerPort
+          ToPort: !Ref WebServerPort
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+  WebAppLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      IamInstanceProfile: !Ref ProfileWithRolesForOurApp
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt-get update -y
+          apt-get install apache2 -y
+          systemctl start apache2.service
+          sudo apt install awscli -y
+          sudo apt install unzip -y
+          cd /var/www/html
+          echo "it works! Udagram, Udacity!" > index.html
+          sudo aws s3 cp s3://${S3BucketID}/website.zip website.zip
+          sudo unzip -o website.zip
+          sudo rm website.zip
+          sudo apt remove awscli -y
+          sudo apt remove unzip -y
+      ImageId: !Ref AMItoUse
+      SecurityGroups:
+        - Ref: WebServerSecGroup
+      InstanceType: !Ref InstanceType
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sdk"
+          Ebs:
+            VolumeSize: !Ref "InstanceStorageSize"
+  WebServerAutoScaleGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PRIV-SUBNETS"
+      LaunchConfigurationName:
+        Ref: WebAppLaunchConfig
+      MinSize: !Ref "MinAvailInstances"
+      MaxSize: !Ref "MaxAvailInstances"
+      MetricsCollection:
+        - Granularity: 1Minute
+          Metrics:
+            - GroupTotalInstances
+            - GroupMinSize
+            - GroupMaxSize
+            - GroupDesiredCapacity
+      TargetGroupARNs:
+        - Ref: WebServerTargetGroup
+  WebServerLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PUB1-SUBNET"
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PUB2-SUBNET"
+      SecurityGroups:
+        - Ref: LBSecGroup
+  WebServerLBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: WebServerTargetGroup
+      LoadBalancerArn:
+        Ref: WebServerLB
+      Port: !Ref "HTTPPort"
+      Protocol: HTTP
+  WebServerLBListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref "WebServerTargetGroup"
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - WebServerPath
+      ListenerArn: !Ref "WebServerLBListener"
+      Priority: 1
+  WebServerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: !Ref "HealthCheckIntervalSeconds"
+      HealthCheckPath: !Ref "WebServerPath"
+      HealthCheckProtocol: !Ref "WebServerProtocol"
+      HealthCheckTimeoutSeconds: !Ref "HealthCheckTimeoutSeconds"
+      HealthyThresholdCount: !Ref "HealthyThresholdCount"
+      Port: !Ref WebServerPort
+      Protocol: !Ref WebServerProtocol
+      UnhealthyThresholdCount: !Ref "UnhealthyThresholdCount"
+      VpcId:
+        Fn::ImportValue:
+          Fn::Sub: "${EnvironmentName}-VPCID"
+Outputs:
+  LBDNSName:
+    Value: !GetAtt
+      - WebServerLB
+      - DNSName
+    Description: Load Balance DNSName
+    Export:
+      Name: !Sub "${EnvironmentName}-LBDNSName"
+  WebsiteURL:
+    Value: !Join
+      - ""
+      - - "http://"
+        - !GetAtt
+          - WebServerLB
+          - DNSName
+    Description: Url to the website
+    Export:
+      Name: !Sub "${EnvironmentName}-WebsiteURL"

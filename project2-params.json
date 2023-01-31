@@ -1,0 +1,61 @@
+[{
+        "ParameterKey": "EnvironmentName",
+        "ParameterValue": "UdacityProject2"
+    },
+    {
+        "ParameterKey": "S3BucketID",
+        "ParameterValue": "project2-056374511921"
+    },
+    {
+        "ParameterKey": "AMItoUse",
+        "ParameterValue": "ami-0ab0629dba5ae551d"
+    },
+    {
+        "ParameterKey": "InstanceStorageSize",
+        "ParameterValue": "10"
+    },
+    {
+        "ParameterKey": "InstanceType",
+        "ParameterValue": "t3.small"
+    },
+    {
+        "ParameterKey": "MinAvailInstances",
+        "ParameterValue": "2"
+    },
+    {
+        "ParameterKey": "MaxAvailInstances",
+        "ParameterValue": "2"
+    },
+    {
+        "ParameterKey": "HealthyThresholdCount",
+        "ParameterValue": "2"
+    },
+    {
+        "ParameterKey": "HealthCheckTimeoutSeconds",
+        "ParameterValue": "8"
+    },
+    {
+        "ParameterKey": "WebServerPath",
+        "ParameterValue": "/"
+    },
+    {
+        "ParameterKey": "WebServerPort",
+        "ParameterValue": "80"
+    },
+    {
+        "ParameterKey": "WebServerProtocol",
+        "ParameterValue": "HTTP"
+    },
+    {
+        "ParameterKey": "HealthCheckIntervalSeconds",
+        "ParameterValue": "10"
+    },
+    {
+        "ParameterKey": "HTTPPort",
+        "ParameterValue": "80"
+    },
+    {
+        "ParameterKey": "UnhealthyThresholdCount",
+        "ParameterValue": "5"
+    }
+]

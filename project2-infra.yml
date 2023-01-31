@@ -1,0 +1,191 @@
+Parameters:
+    EnvironmentName:
+        Description: An environment name that will be prefixed to resource names
+        Type: String
+    VpcCIDR: 
+        Description: Please enter the IP range (CIDR notation) for this VPC
+        Type: String
+    PubSubnet1CIDR:
+        Description: Public Subnet 1 Ip CIDR block
+        Type: String
+    PubSubnet2CIDR:
+        Description: Public Subnet 2 Ip CIDR block
+        Type: String
+    PrivSubnet1CIDR:
+        Description: Private Subnet 1 Ip CIDR block
+        Type: String
+    PrivSubnet2CIDR:
+        Description: Private Subnet 2 Ip CIDR block
+        Type: String
+Resources:
+  VPC: 
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      Tags: 
+      - Key: Name 
+        Value: !Sub "${EnvironmentName}VPC"
+  PubSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PubSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags: 
+      - Key: Name 
+        Value: !Sub "${EnvironmentName} Public Subnet at AZ1"
+  PubSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref PubSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags: 
+      - Key: Name 
+        Value: !Sub "${EnvironmentName} Public Subnet at AZ2"
+  PrivSubnet1:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PrivSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags: 
+      - Key: Name 
+        Value: !Sub "${EnvironmentName} Private Subnet at AZ1"
+  PrivSubnet2:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref PrivSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags: 
+      - Key: Name 
+        Value: !Sub "${EnvironmentName} Private Subnet at AZ2"
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} Internet Gateway"
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+  PubRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref VPC
+      Tags: 
+      - Key: Name 
+        Value: !Sub "${EnvironmentName} Public Routes"
+  PubRoute: 
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties: 
+      RouteTableId: !Ref PubRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PubSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PubRouteTable
+      SubnetId: !Ref PubSubnet1
+  PubSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PubRouteTable
+      SubnetId: !Ref PubSubnet2
+  NATGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+  NATGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+  NATGateway1: 
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      ConnectivityType: public
+      AllocationId: !GetAtt NATGateway1EIP.AllocationId
+      SubnetId: !Ref PubSubnet1
+  NATGateway2: 
+    Type: AWS::EC2::NatGateway
+    Properties:
+      ConnectivityType: public
+      AllocationId: !GetAtt NATGateway2EIP.AllocationId
+      SubnetId: !Ref PubSubnet2 
+  PrivRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref VPC
+      Tags: 
+      - Key: Name 
+        Value: !Sub "${EnvironmentName} Private Routes AZ 1"
+  PrivSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivRouteTable1
+      SubnetId: !Ref PrivSubnet1
+  PrivRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref VPC
+      Tags: 
+      - Key: Name 
+        Value: !Sub "${EnvironmentName} Private Routes AZ 2"
+  PrivSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivRouteTable2
+      SubnetId: !Ref PrivSubnet2
+  RouteNATGateway1:
+    DependsOn: NATGateway1
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivRouteTable1
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NATGateway1
+  RouteNATGateway2:
+    DependsOn: NATGateway2
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivRouteTable2
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NATGateway2
+
+Outputs:
+
+  VPC: 
+    Description: Project 2 VPC
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${EnvironmentName}-VPCID"
+  PublicSubnets:
+    Description: A list of the public subnets
+    Value: !Join [ ",", [ !Ref PubSubnet1, !Ref PubSubnet2 ]]
+    Export:
+      Name: !Sub "${EnvironmentName}-PUB-SUBNETS"
+  PrivateSubnets:
+    Description: A list of the private subnets
+    Value: !Join [ ",", [ !Ref PrivSubnet1, !Ref PrivSubnet2 ]]
+    Export:
+      Name: !Sub "${EnvironmentName}-PRIV-SUBNETS"
+  PublicSubnet1:
+    Description: A reference to the public subnet in the 1st Availability Zone
+    Value: !Ref PubSubnet1
+    Export:
+      Name: !Sub "${EnvironmentName}-PUB1-SUBNET"
+  PublicSubnet2: 
+    Description: A reference to the public subnet in the 2nd Availability Zone
+    Value: !Ref PubSubnet2
+    Export:
+      Name: !Sub "${EnvironmentName}-PUB2-SUBNET"
